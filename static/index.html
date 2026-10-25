@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-Agent Orchestrator</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel2:#1d212b; --border:#2a2f3a;
+  --text:#e6e9ef; --muted:#8b93a3;
+  --blue:#3b82f6; --green:#22c55e; --red:#ef4444; --amber:#f59e0b;
+  --purple:#a855f7;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+#app{display:flex;height:100vh}
+/* ---- sidebar ---- */
+#sidebar{width:320px;min-width:320px;background:var(--panel);border-right:1px solid var(--border);
+  display:flex;flex-direction:column}
+#sidebar h1{font-size:15px;padding:14px 16px;border-bottom:1px solid var(--border)}
+#sidebar h1 span{color:var(--muted);font-weight:400}
+#runs{flex:1;overflow-y:auto}
+.run{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer}
+.run:hover{background:var(--panel2)}
+.run.active{background:var(--panel2);box-shadow:inset 3px 0 0 var(--blue)}
+.run .goal{font-size:12px;color:var(--text);margin-bottom:4px;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.run .meta{display:flex;justify-content:space-between;align-items:center}
+.run .meta .status{font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+.run .meta time{color:var(--muted);font-size:11px}
+#sidebar .footer{padding:6px 14px;border-top:1px solid var(--border);color:var(--muted);font-size:11px}
+#sidebar .footer button{background:none;border:none;color:var(--blue);cursor:pointer;font-size:11px;font-family:inherit}
+
+/* ---- main ---- */
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#toolbar{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px}
+#toolbar input{flex:1;background:var(--panel);border:1px solid var(--border);color:var(--text);
+  padding:9px 12px;border-radius:8px;outline:none}
+#toolbar input:focus{border-color:var(--blue)}
+#toolbar button{background:var(--blue);border:none;color:#fff;padding:9px 18px;border-radius:8px;
+  cursor:pointer;font-weight:600}
+#toolbar button:disabled{opacity:.5;cursor:not-allowed}
+
+#columns{flex:1;display:flex;min-height:0}
+#graphcol{flex:1.2;min-width:0;overflow-y:auto;padding:16px}
+#logcol{flex:1;min-width:0;border-left:1px solid var(--border);background:var(--panel);
+  display:flex;flex-direction:column}
+#logcol h2{font-size:12px;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--border);
+  text-transform:uppercase;letter-spacing:.5px}
+#log{flex:1;overflow-y:auto;padding:8px 14px;font-size:12px}
+#log .ev{margin-bottom:4px;color:var(--muted)}
+#log .ev .k{color:var(--blue)}
+
+/* graph */
+.task{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;
+  padding:12px 14px}
+.task .head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.task .head .name{font-weight:700}
+.task .head .id{color:var(--muted);font-size:11px}
+.task .goaltext{color:var(--text);margin:8px 0;font-size:13px}
+.task .body{color:var(--muted);font-size:12px}
+.task .body pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  padding:8px;margin-top:6px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto}
+.task .feedback{margin-top:6px;color:var(--amber);word-break:break-word}
+.badge{display:inline-block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+  padding:2px 8px;border-radius:999px;font-weight:700}
+.badge.pending{background:#1e293b;color:var(--muted)}
+.badge.running{background:#172554;color:var(--blue)}
+.badge.done{background:#052e16;color:var(--green)}
+.badge.failed{background:#450a0a;color:var(--red)}
+.badge.failed_permanent{background:#450a0a;color:var(--red)}
+.badge.needs_fix{background:#451a03;color:var(--amber)}
+.badge.awaiting_human{background:#2e1065;color:var(--purple)}
+.arrow{color:var(--muted);margin:2px 0 2px 14px;font-size:11px}
+
+/* modal */
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50}
+#modal.open{display:flex}
+#modal .box{background:var(--panel2);border:1px solid var(--border);border-radius:14px;width:480px;
+  max-width:92vw;padding:20px;max-height:80vh;overflow-y:auto}
+#modal h3{margin-bottom:10px}
+#modal .reason{color:var(--muted);font-size:13px;margin-bottom:12px}
+#modal textarea{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);
+  border-radius:8px;padding:8px;resize:vertical;margin-bottom:12px}
+#modal .actions{display:flex;gap:10px;justify-content:flex-end}
+#modal button{padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-weight:600}
+#retry{background:var(--green);color:#04120a}
+#abandon{background:var(--red);color:#fff}
+
+#empty{color:var(--muted);text-align:center;margin-top:60px;font-size:13px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <h1>Multi-Agent Orchestrator <span>Research→Code→Verify</span></h1>
+    <div id="runs"></div>
+    <div class="footer">
+      <span id="cfg">…</span>
+      <button id="refresh">refresh</button>
+    </div>
+  </aside>
+  <main id="main">
+    <div id="toolbar">
+      <input id="goal" placeholder="e.g. Write a Python function that checks if a number is prime, with tests.">
+      <button id="start">Run</button>
+    </div>
+    <div id="columns">
+      <div id="graphcol"><div id="empty">Select a run from the left, or start one.</div></div>
+      <div id="logcol">
+        <h2>Event Log</h2>
+        <div id="log"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="modal">
+  <div class="box">
+    <h3>⚠ Human intervention needed</h3>
+    <div class="reason" id="modal-reason"></div>
+    <textarea id="modal-feedback" rows="4" placeholder="Optional feedback to guide the retry…"></textarea>
+    <div class="actions">
+      <button id="retry">Retry</button>
+      <button id="abandon">Abandon</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let current = null;          // active run id
+let es = null;               // EventSource
+let logEl = null, taskEl = null;
+
+async function loadConfig(){
+  try {
+    const r = await fetch('/api/config').then(x=>x.json());
+    let m = r.ollama_error
+      ? `model ${r.model} — ⚠ ollama unreachable`
+      : `model ${r.model} · ${r.models_available ? r.models_available.length : 0} avail`;
+    $('cfg').textContent = m;
+  } catch(e) {
+    $('cfg').textContent = 'error loading config';
+  }
+}
+
+async function loadRuns(){
+  try {
+    const {runs} = await fetch('/api/runs').then(x=>x.json());
+    const box = $('runs');
+    box.innerHTML = '';
+    if(!runs || !runs.length){
+      box.innerHTML = '<div style="color:var(--muted);padding:14px;font-size:12px">No runs yet.</div>';
+      return;
+    }
+    for(const r of runs){
+      const d = document.createElement('div');
+      d.className = 'run' + (r.run_id===current ? ' active' : '');
+      d.dataset.id = r.run_id;
+      d.innerHTML = `
+        <div class="goal">${esc(r.goal)}</div>
+        <div class="meta">
+          <span class="status" style="color:${statusColor(r.status)}">${r.status} · ${r.done}/${r.task_count}</span>
+          <time>${new Date(r.created_at*1000).toLocaleTimeString()}</time>
+        </div>`;
+      d.onclick = ()=>openRun(r.run_id);
+      box.appendChild(d);
+    }
+  } catch(e) {
+    console.error('Failed to load runs:', e);
+  }
+}
+
+async function openRun(id){
+  if(es) es.close();
+  current = id;
+  logEl = $('log'); taskEl = $('graphcol');
+  logEl.innerHTML = ''; taskEl.innerHTML = '<div class="nodeed">loading…</div>';
+  $('empty')?.classList.add('hidden');
+
+  loadRuns().then(()=>{
+    const el = document.querySelector(`.run[data-id="${id}"]`);
+    if(el) el.classList.add('active');
+  });
+
+  es = new EventSource(`/api/runs/${id}/stream`);
+  es.onmessage = onEvent;
+
+  try {
+    const res = await fetch(`/api/runs/${id}`).then(r=>r.json());
+    if(res.tasks){
+      renderGraph(res.tasks);
+      const awaiting = res.tasks.find(t => t.status === 'awaiting_human');
+      if(awaiting){
+        showHITL(awaiting.feedback || 'A task requires human decision.');
+      } else {
+        hideHITL();
+      }
+    }
+  } catch(e) {
+    console.error('Failed to load run details:', e);
+  }
+}
+
+function onEvent(msg){
+  const ev = JSON.parse(msg.data);
+  const task = ev.payload?.task || (ev.payload?.id && ev.payload?.agent ? ev.payload : null);
+  if(task) updateTask(task);
+  appendLog(ev.event, ev.payload);
+
+  if(ev.event === 'run_finished' || ev.event === 'run_error') loadRuns();
+  if(ev.event === 'hitl_required') showHITL(ev.payload?.reason);
+  if(ev.event === 'hitl_resolved') hideHITL();
+}
+
+function updateTask(t){
+  const card = document.querySelector(`[data-task="${t.id}"]`);
+  if(!card){
+    if(current) renderGraphFromServer();
+    return;
+  }
+  const badge = card.querySelector('.badge');
+  if(badge){
+    badge.className = 'badge ' + t.status;
+    badge.textContent = t.status;
+  }
+  const attEl = card.querySelector('.task-attempts');
+  if(attEl) attEl.textContent = t.attempts;
+
+  let body = card.querySelector('.body');
+  if(!body) return;
+
+  let feedbackEl = card.querySelector('.feedback');
+  if(t.feedback){
+    if(!feedbackEl){
+      feedbackEl = document.createElement('div');
+      feedbackEl.className = 'feedback';
+      body.appendChild(feedbackEl);
+    }
+    feedbackEl.textContent = '△ ' + String(t.feedback).substring(0, 500);
+    feedbackEl.style.display = '';
+  } else if(feedbackEl){
+    feedbackEl.style.display = 'none';
+  }
+
+  let resultEl = card.querySelector('.result');
+  if(t.result){
+    if(!resultEl){
+      resultEl = document.createElement('pre');
+      resultEl.className = 'result';
+      body.appendChild(resultEl);
+    }
+    resultEl.textContent = String(t.result).substring(0, 1500);
+    resultEl.style.display = '';
+  } else if(resultEl){
+    resultEl.style.display = 'none';
+  }
+}
+
+async function renderGraphFromServer(){
+  if(!current) return;
+  const res = await fetch(`/api/runs/${current}`).then(r=>r.json());
+  if(res.tasks) renderGraph(res.tasks);
+}
+
+function renderGraph(tasks){
+  taskEl.innerHTML = '';
+  if(!tasks || !tasks.length){ taskEl.innerHTML = '<div id="empty">No tasks.</div>'; return; }
+  const children = {};
+  tasks.forEach(t=>{
+    if(t.parent_id){ (children[t.parent_id] = children[t.parent_id]||[]).push(t); }
+  });
+  const roots = tasks.filter(t=>!t.parent_id);
+
+  function tree(t){
+    const card = document.createElement('div');
+    card.className = 'task'; card.dataset.task = t.id;
+    card.innerHTML = `
+      <div class="head">
+        <span class="name">🔹 ${esc(t.agent)} <span class="id">#${esc(t.id)}</span>
+          <span class="badge ${esc(t.status)}">${esc(t.status)}</span></span>
+      </div>
+      <div class="goaltext">${esc(String(t.goal).split('\n')[0])}</div>
+      <div class="body">
+        attempts <span class="task-attempts">${t.attempts}</span>
+        ${t.feedback ? `<div class="feedback">△ ${esc(String(t.feedback).substring(0,500))}</div>` : ''}
+        ${t.result ? `<pre class="result">${esc(String(t.result).substring(0,1500))}</pre>` : ''}
+      </div>`;
+    taskEl.appendChild(card);
+    (children[t.id]||[]).forEach(c=>{
+      const a = document.createElement('div'); a.className='arrow'; a.textContent='└━ child →';
+      taskEl.appendChild(a);
+      tree(c);
+    });
+  }
+  roots.forEach(tree);
+}
+
+function showHITL(reason){
+  $('modal').classList.add('open');
+  $('modal-reason').textContent = reason || 'A task needs a decision. See the graph for details.';
+}
+
+function hideHITL(){ $('modal').classList.remove('open'); }
+
+async function decide(action){
+  if(!current){ hideHITL(); return; }
+  const body = {action, feedback:$('modal-feedback').value};
+  $('modal-feedback').value='';
+  await fetch(`/api/runs/${current}/decision`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  hideHITL();
+}
+
+function appendLog(event, payload){
+  if(!logEl) return;
+  const line = document.createElement('div'); line.className='ev';
+  let txt = '';
+  if(payload?.task) txt += `task ${payload.task.id} (${payload.task.agent}) → ${payload.task.status}`;
+  else if(payload?.id && payload?.agent) txt += `task ${payload.id} (${payload.agent}) → ${payload.status}`;
+  else if(payload?.goal) txt += `goal: ${payload.goal}`;
+  else if(payload?.steps) txt += `finished in ${payload.steps} steps`;
+  else if(payload?.error) txt += `error: ${payload.error}`;
+  else txt += JSON.stringify(payload).substring(0,200);
+  line.innerHTML = `<span class="k">${esc(event)}</span> ${esc(txt)}`;
+  logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+}
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const statusColor = s => ({
+  running:'var(--blue)',
+  done:'var(--green)',
+  failed:'var(--red)',
+  failed_permanent:'var(--red)',
+  needs_fix:'var(--amber)',
+  awaiting_human:'var(--purple)',
+  pending:'var(--muted)'
+}[s] || 'var(--muted)');
+
+$('start').onclick = async ()=>{
+  const goal = $('goal').value.trim();
+  if(!goal) return;
+  $('start').disabled = true;
+  try{
+    const r = await fetch('/api/runs', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({goal})
+    }).then(x=>x.json());
+    if(r.run_id){
+      $('goal').value='';
+      openRun(r.run_id);
+    } else if(r.error){
+      alert('Error: ' + r.error);
+    }
+  } catch(e) {
+    alert('Failed to start run: ' + e);
+  } finally {
+    $('start').disabled = false;
+  }
+  loadRuns();
+};
+$('goal').addEventListener('keydown', e => { if(e.key==='Enter') $('start').click(); });
+$('retry').onclick = ()=>decide('retry');
+$('abandon').onclick = ()=>decide('abandon');
+$('refresh').onclick = ()=>loadRuns();
+
+loadConfig(); loadRuns();
+</script>
+</body>
+</html>
